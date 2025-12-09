@@ -6,7 +6,7 @@ import { logger } from "./middleware/index.js";
 import * as appRoutes from "./modules/index.js";
 import { globalErrorHandler } from "./utils/index.js";
 
-export default function bootstrap(app, express) {
+export default async function bootstrap(app, express) {
 
     app.set('trust proxy', 1);
     app.use(cors({
@@ -29,7 +29,11 @@ export default function bootstrap(app, express) {
     app.use(express.json());
     app.use("/uploads", express.static("uploads"));
     app.use(logger);
-    connectDB(config.DB_URI);
+    if (!config.DB_URI) {
+        throw new Error("Missing DB_URI environment variable");
+    }
+
+    await connectDB(config.DB_URI);
 
     //Routes
     app.use("/auth", appRoutes.authRouter);

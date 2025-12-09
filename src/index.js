@@ -6,7 +6,7 @@ import { initializeSocket } from "./socket/socket.js";
 import { setupSocketHandlers } from "./socket/socket.handler.js";
 
 const app = express();
-bootstrap(app, express);
+await bootstrap(app, express);
 
 let server;
 
