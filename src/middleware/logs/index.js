@@ -2,6 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 
 export const logger = (req, res, next) => {
+    // Vercel serverless has a read-only filesystem; skip file logging there.
+    if (process.env.VERCEL) return next();
     // Capture start time
     const start = Date.now();
     const { method, url, ip, headers } = req;
