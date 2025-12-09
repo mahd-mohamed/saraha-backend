@@ -9,8 +9,9 @@ import { globalErrorHandler } from "./utils/index.js";
 export default async function bootstrap(app, express) {
 
     app.set('trust proxy', 1);
+    // Allow all origins for API calls (Bearer auth in headers; no cookies needed)
     app.use(cors({
-        origin: config.FRONTEND_URLs,
+        origin: (origin, callback) => callback(null, true),
         credentials: true,
         methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         allowedHeaders: ["Content-Type", "Authorization", "refreshtoken"],
