@@ -21,3 +21,6 @@ bootstrap(app, express);
 httpServer.listen(port, () => {
     console.log(`Server is running on " http://localhost:${port} "`);
 });
+
+// Export for Vercel serverless
+export default httpServer;
