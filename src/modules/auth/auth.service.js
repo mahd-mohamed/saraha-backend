@@ -144,47 +144,157 @@ export const resendOtp = async (req, res) => {
 };
 
 export const googleLogin = async (req, res) => {
-    //get idToken from req
-    const { idToken } = req.body;
-    //create client
-    const client = new OAuth2Client("283113959654-2e506m15udir05v41vbb7evp97cv4b3c.apps.googleusercontent.com");
-    //verify idToken
-    const ticket = await client.verifyIdToken({
-        idToken,
-        audience: "283113959654-2e506m15udir05v41vbb7evp97cv4b3c.apps.googleusercontent.com",
-    });
-    const payload = ticket.getPayload();
-    // const userId = payload.sub;
-    //check if user exists
-    let userExists = await userModel.findOne({ email: payload.email });
-    if (!userExists) {
-        userExists = await userModel.create({
-            email: payload.email,
-            name: payload.given_name,
-            phone: payload.phone_number,
-            isVerified: true,
-            userAgent: "google",
-        });
-    }
-    //generate token
-    const accessToken = generateToken(userExists);
-    const refreshToken = generateToken(userExists, "7d");
-    //save refresh token to db
-    await tokenModel.create({
-        userId: userExists._id,
-        token: refreshToken,
-        type: "refresh"
-    });
+    try {
+        //get idToken from req
+        const { idToken } = req.body;
+        
+        console.log("Google login request received");
+        console.log("Request body keys:", Object.keys(req.body || {}));
+        console.log("idToken present:", !!idToken);
+        console.log("idToken length:", idToken ? idToken.length : 0);
+        
+        if (!idToken) {
+            throw new Error("ID token is required", { cause: 400 });
+        }
+        
+        if (typeof idToken !== 'string' || idToken.trim().length === 0) {
+            throw new Error("Invalid ID token format", { cause: 400 });
+        }
 
-    //send response
-    res.status(200).json({
-        message: "User logged in successfully",
-        data: {
-            accessToken,
-            refreshToken,
-        },
-        success: true
-    });
+        //create client
+        const client = new OAuth2Client("283113959654-2e506m15udir05v41vbb7evp97cv4b3c.apps.googleusercontent.com");
+        
+        let ticket;
+        let payload;
+        
+        try {
+            //verify idToken
+            ticket = await client.verifyIdToken({
+                idToken,
+                audience: "283113959654-2e506m15udir05v41vbb7evp97cv4b3c.apps.googleusercontent.com",
+            });
+            
+            payload = ticket.getPayload();
+        } catch (verifyError) {
+            console.error("Google token verification error:", verifyError);
+            console.error("Error details:", {
+                message: verifyError.message,
+                code: verifyError.code,
+                stack: verifyError.stack
+            });
+            
+            // Handle specific Google OAuth errors
+            const errorMessage = verifyError.message || verifyError.toString() || '';
+            
+            if (errorMessage.includes('Token used too early') || 
+                errorMessage.includes('Token used too late') ||
+                errorMessage.includes('Invalid token') ||
+                errorMessage.includes('Wrong number of segments') ||
+                errorMessage.includes('Invalid signature') ||
+                errorMessage.includes('Token expired') ||
+                errorMessage.includes('Invalid audience')) {
+                throw new Error("Invalid or expired Google token", { cause: 401 });
+            }
+            
+            // Generic error for any other Google OAuth verification failure
+            throw new Error("Failed to verify Google token. Please try again.", { cause: 401 });
+        }
+        
+        if (!payload || !payload.email) {
+            throw new Error("Invalid Google token payload - email not found", { cause: 401 });
+        }
+
+        // Extract name from Google payload
+        // Google can return either 'name' (full name) or 'given_name' + 'family_name'
+        let fullName = payload.name;
+        if (!fullName && (payload.given_name || payload.family_name)) {
+            fullName = [payload.given_name, payload.family_name].filter(Boolean).join(' ').trim();
+        }
+        // Fallback to email if no name is available
+        if (!fullName) {
+            fullName = payload.email.split('@')[0];
+        }
+
+        //check if user exists
+        let userExists = await userModel.findOne({ email: payload.email });
+        
+        if (!userExists) {
+            // Create new user for Google registration
+            // Set credentialsUpdatedAt to a time slightly before now to avoid token expiration issues
+            const now = new Date();
+            const credentialsTime = new Date(now.getTime() - 1000); // 1 second before now
+            
+            userExists = await userModel.create({
+                email: payload.email,
+                name: fullName,
+                // phone is optional and Google OAuth doesn't provide it
+                isVerified: true,
+                userAgent: "google",
+                credentialsUpdatedAt: credentialsTime
+            });
+        } else {
+            // User exists - if logging in with Google, always mark as verified
+            // Update name if it's different
+            if (userExists.name !== fullName) {
+                userExists.name = fullName;
+            }
+            // Google login always means verified email
+            userExists.isVerified = true;
+            // Update userAgent to google if not already set
+            if (userExists.userAgent !== "google") {
+                userExists.userAgent = "google";
+            }
+            await userExists.save();
+        }
+
+        //generate token
+        console.log("Generating token for user:", {
+            _id: userExists._id,
+            email: userExists.email,
+            name: userExists.name,
+            isVerified: userExists.isVerified,
+            userAgent: userExists.userAgent
+        });
+        
+        const accessToken = generateToken(userExists);
+        const refreshToken = generateToken(userExists, "7d");
+        
+        console.log("Tokens generated:", {
+            accessTokenLength: accessToken.length,
+            refreshTokenLength: refreshToken.length
+        });
+        
+        //save refresh token to db
+        await tokenModel.create({
+            userId: userExists._id,
+            token: refreshToken,
+            type: "refresh"
+        });
+
+        //send response
+        res.status(200).json({
+            message: "User logged in successfully",
+            data: {
+                accessToken,
+                refreshToken,
+                id: userExists._id,
+                name: userExists.name,
+                email: userExists.email,
+            },
+            success: true
+        });
+    } catch (error) {
+        // Log the error for debugging
+        console.error("Google login error:", error);
+        
+        // If error already has a cause (status code), re-throw it
+        if (error.cause) {
+            throw error;
+        }
+        
+        // Handle other errors - default to 401 for authentication issues
+        throw new Error(error.message || "Google authentication failed", { cause: 401 });
+    }
 };
 
 export const resetPassword = async (req, res) => {

@@ -10,12 +10,23 @@ export const profile = async (req,res) => {
     if(req.user.phone){
         phone = decrypt(req.user.phone);
     }
-    let { isVerified, userAgent, credentialsUpdatedAt, password, ...user } = req.user._doc;
+    
+    // Ensure Google users are always marked as verified
+    let isVerified = req.user.isVerified;
+    if (req.user.userAgent === "google" && !isVerified) {
+        // Update the user in database to mark as verified
+        await userModel.findByIdAndUpdate(req.user._id, { isVerified: true });
+        isVerified = true;
+    }
+    
+    let { credentialsUpdatedAt, password, ...user } = req.user._doc;
     res.status(200).json({
         message: "User details fetched successfully",
         data: {
             ...user,
-            phone
+            phone,
+            isVerified: isVerified,
+            userAgent: req.user.userAgent
         },
         success: true
     });

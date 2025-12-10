@@ -46,16 +46,26 @@ export const sendMessage = async (req, res) => {
 
 
 export const getMessages = async (req, res) => {
+    console.log("getMessages called");
+    console.log("Request headers:", {
+        authorization: req.headers.authorization ? 'present' : 'missing',
+        origin: req.headers.origin
+    });
 
     const { user } = req;
 
     if (!user || !user._id) {
+        console.log("User not found in request");
         throw new Error("Unauthorized, user not found", { cause: 401 });
     }
+
+    console.log("Fetching messages for user:", user._id);
 
     const messages = await messageModel.find({
         receiver: user._id,
     }).populate("sender", "name email profilePicture");
+
+    console.log("Found messages:", messages.length);
 
     return res.status(200).json({
         success: true,

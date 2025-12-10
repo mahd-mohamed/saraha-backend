@@ -9,8 +9,36 @@ import { globalErrorHandler } from "./utils/index.js";
 export default function bootstrap(app, express) {
 
     app.set('trust proxy', 1);
+    
+    // CORS configuration
+    const allowedOrigins = Array.isArray(config.FRONTEND_URLs) 
+        ? config.FRONTEND_URLs 
+        : [config.FRONTEND_URLs].filter(Boolean);
+    
+    console.log('CORS allowed origins:', allowedOrigins);
+    
     app.use(cors({
-        origin: config.FRONTEND_URLs,
+        origin: function (origin, callback) {
+            // Allow requests with no origin (like mobile apps or curl requests)
+            if (!origin) {
+                console.log('CORS: No origin, allowing request');
+                return callback(null, true);
+            }
+            
+            // Check if origin is in allowed list
+            const isAllowed = allowedOrigins.some(allowed => {
+                return origin === allowed || origin.startsWith(allowed);
+            });
+            
+            if (isAllowed) {
+                console.log('CORS: Allowing origin:', origin);
+                callback(null, true);
+            } else {
+                console.log('CORS: Blocking origin:', origin);
+                console.log('CORS: Allowed origins:', allowedOrigins);
+                callback(new Error('Not allowed by CORS'));
+            }
+        },
         credentials: true,
         methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         allowedHeaders: ["Content-Type", "Authorization", "refreshtoken"],
